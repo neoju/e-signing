@@ -1,4 +1,4 @@
-import { Upload, Download, FileSignature } from "lucide-react";
+import { Upload, Download, FileSignature, Send } from "lucide-react";
 import clsx from "clsx";
 
 export function TopBar({
@@ -7,12 +7,16 @@ export function TopBar({
   onExport,
   exporting,
   canExport,
+  onSend,
+  canSend,
 }: {
   fileName: string;
   onReset: () => void;
   onExport: () => void;
   exporting: boolean;
   canExport: boolean;
+  onSend: () => void;
+  canSend: boolean;
 }) {
   return (
     <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-panel px-3 py-2.5 sm:px-6 sm:py-3">
@@ -31,14 +35,25 @@ export function TopBar({
           onClick={onExport}
           disabled={!canExport || exporting}
           className={clsx(
-            "btn-primary !px-3 sm:!px-5",
+            "btn-ghost !px-3 sm:!px-5",
             (!canExport || exporting) && "cursor-not-allowed opacity-50",
           )}
         >
           <Download className="h-4 w-4" />
           <span className="hidden sm:inline">
-            {exporting ? "Exporting…" : "Download signed"}
+            {exporting ? "Exporting…" : "Download a copy"}
           </span>
+        </button>
+        <button
+          onClick={onSend}
+          disabled={!canSend}
+          className={clsx(
+            "btn-primary !px-3 sm:!px-5",
+            !canSend && "cursor-not-allowed opacity-50",
+          )}
+        >
+          <Send className="h-4 w-4" />
+          <span className="hidden sm:inline">Send for signature</span>
         </button>
       </div>
     </header>

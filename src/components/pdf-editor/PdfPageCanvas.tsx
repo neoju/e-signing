@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import type { Field, FieldKind, RenderedPage } from "@/types/pdf-editor";
+import type { Field, FieldAssignee, FieldKind, RenderedPage } from "@/types/pdf-editor";
 import { FieldBox } from "./FieldBox";
 
 export function PdfPageCanvas({
@@ -8,6 +8,7 @@ export function PdfPageCanvas({
   totalPages,
   fields,
   tool,
+  placingAssignee,
   selectedFieldId,
   onSelectField,
   onChangeField,
@@ -20,6 +21,7 @@ export function PdfPageCanvas({
   totalPages: number;
   fields: Field[];
   tool: FieldKind | null;
+  placingAssignee: FieldAssignee;
   selectedFieldId: string | null;
   onSelectField: (id: string) => void;
   onChangeField: (id: string, patch: Partial<Field>) => void;
@@ -33,7 +35,10 @@ export function PdfPageCanvas({
       data-page-index={pageIndex}
       className={clsx(
         "relative mx-auto w-full overflow-hidden rounded-md shadow-2xl",
-        tool && "cursor-crosshair ring-2 ring-accent/60",
+        tool &&
+          (placingAssignee === "recipient"
+            ? "cursor-crosshair ring-2 ring-accent2/60"
+            : "cursor-crosshair ring-2 ring-accent/60"),
       )}
       style={{ aspectRatio: `${page.width} / ${page.height}` }}
       onClick={(e) => onPlaceField(pageIndex, e)}

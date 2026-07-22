@@ -140,6 +140,8 @@ export function FieldBox({
     window.addEventListener("touchcancel", end);
   };
 
+  const isRecipient = field.assignee === "recipient";
+
   return (
     <div
       ref={boxRef}
@@ -147,8 +149,10 @@ export function FieldBox({
       onMouseDown={onMouseDown}
       onTouchStart={onTouchStart}
       className={clsx(
-        "group absolute cursor-move rounded border-2 border-accent/70 bg-accent/5",
-        (dragging || resizing || selected) && "ring-2 ring-accent",
+        "group absolute cursor-move rounded border-2 bg-accent/5",
+        isRecipient ? "border-accent2/70" : "border-accent/70",
+        (dragging || resizing || selected) &&
+          (isRecipient ? "ring-2 ring-accent2" : "ring-2 ring-accent"),
       )}
       style={{
         left: `${field.x * 100}%`,
@@ -157,6 +161,14 @@ export function FieldBox({
         height: `${field.h * 100}%`,
       }}
     >
+      <span
+        className={clsx(
+          "absolute -top-5 left-0 whitespace-nowrap rounded-t px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white",
+          isRecipient ? "bg-accent2" : "bg-accent",
+        )}
+      >
+        {isRecipient ? "Next signer" : "You"}
+      </span>
       {field.kind === "signature" && field.value && (
         // eslint-disable-next-line @next/next/no-img-element
         <img

@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Check, Copy, X } from "lucide-react";
 import { SignatureModal } from "./SignatureModal";
 import { TopBar } from "./pdf-editor/TopBar";
+import { RecipientAssignBar } from "./pdf-editor/RecipientAssignBar";
 import { Sidebar } from "./pdf-editor/Sidebar";
 import { MobileToolbar } from "./pdf-editor/MobileToolbar";
 import { PageReviewPanel } from "./pdf-editor/PageReviewPanel";
@@ -10,9 +13,13 @@ import { PdfPageCanvas } from "./pdf-editor/PdfPageCanvas";
 import { Uploader } from "./pdf-editor/Uploader";
 import { renderPdfPages } from "@/lib/pdf-render";
 import { exportSignedPdf } from "@/lib/pdf-export";
-import type { Field, FieldKind, RenderedPage } from "@/types/pdf-editor";
+import { addSentRequest } from "@/lib/sent-requests";
+import type { Field, FieldAssignee, FieldKind, RenderedPage } from "@/types/pdf-editor";
+
+type EditorMode = "edit" | "assign-recipient";
 
 export function PdfEditor() {
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
   const [pages, setPages] = useState<RenderedPage[]>([]);
@@ -23,6 +30,11 @@ export function PdfEditor() {
   const [pendingSigField, setPendingSigField] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [mode, setMode] = useState<EditorMode>("edit");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [activePage, setActivePage] = useState(0);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -32,6 +44,7 @@ export function PdfEditor() {
     setLoading(true);
     setFields([]);
     setActivePage(0);
+    setMode("edit");
     setFile(f);
     const buf = await f.arrayBuffer();
     setPdfBytes(buf);
@@ -85,6 +98,7 @@ export function PdfEditor() {
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
     const id = crypto.randomUUID();
+    const assignee: FieldAssignee = mode === "assign-recipient" ? "recipient" : "sender";
     const base: Field = {
       id,
       kind: tool,
@@ -94,8 +108,13 @@ export function PdfEditor() {
       w: tool === "signature" ? 0.22 : 0.14,
       h: tool === "signature" ? 0.06 : 0.03,
       value: "",
+      assignee,
     };
-    if (tool === "signature") {
+    if (assignee === "recipient") {
+      // The next signer fills these in themselves — never pre-fill or use
+      // the sender's own saved signature here.
+      setFields((prev) => [...prev, base]);
+    } else if (tool === "signature") {
       if (savedSig) {
         setFields((prev) => [...prev, { ...base, value: savedSig }]);
       } else {
@@ -141,6 +160,50 @@ export function PdfEditor() {
     }
   };
 
+  const recipientFieldCount = fields.filter((f) => f.assignee === "recipient").length;
+
+  const beginAssignRecipient = () => {
+    setSelectedFieldId(null);
+    setTool(null);
+    setMode("assign-recipient");
+  };
+
+  const cancelAssignRecipient = () => {
+    setTool(null);
+    setMode("edit");
+  };
+
+  const generateLink = async () => {
+    if (!pdfBytes || !file || recipientFieldCount === 0) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      const title = file.name.replace(/\.pdf$/i, "");
+      const form = new FormData();
+      form.append("title", title);
+      form.append("fields", JSON.stringify(fields));
+      form.append("file", new Blob([pdfBytes], { type: "application/pdf" }), file.name);
+      const res = await fetch("/api/requests", { method: "POST", body: form });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? "Failed to create signature request");
+      }
+      const data: { id: string; token: string } = await res.json();
+      addSentRequest({
+        id: data.id,
+        token: data.token,
+        title,
+        createdAt: new Date().toISOString(),
+      });
+      setShareLink(`${window.location.origin}/sign/${data.token}`);
+      setMode("edit");
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setSending(false);
+    }
+  };
+
   if (!file) {
     return (
       <Uploader
@@ -153,19 +216,31 @@ export function PdfEditor() {
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-bg">
-      <TopBar
-        fileName={file.name}
-        onReset={() => {
-          setFile(null);
-          setPdfBytes(null);
-          setPages([]);
-          setFields([]);
-          setActivePage(0);
-        }}
-        onExport={exportPdf}
-        exporting={exporting}
-        canExport={fields.length > 0}
-      />
+      {mode === "assign-recipient" ? (
+        <RecipientAssignBar
+          areaCount={recipientFieldCount}
+          onCancel={cancelAssignRecipient}
+          onGenerate={generateLink}
+          generating={sending}
+        />
+      ) : (
+        <TopBar
+          fileName={file.name}
+          onReset={() => {
+            setFile(null);
+            setPdfBytes(null);
+            setPages([]);
+            setFields([]);
+            setActivePage(0);
+            setMode("edit");
+          }}
+          onExport={exportPdf}
+          exporting={exporting}
+          canExport={fields.length > 0}
+          onSend={beginAssignRecipient}
+          canSend={!loading}
+        />
+      )}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           tool={tool}
@@ -194,6 +269,7 @@ export function PdfEditor() {
                 totalPages={pages.length}
                 fields={fields}
                 tool={tool}
+                placingAssignee={mode === "assign-recipient" ? "recipient" : "sender"}
                 selectedFieldId={selectedFieldId}
                 onSelectField={setSelectedFieldId}
                 onChangeField={updateField}
@@ -237,6 +313,63 @@ export function PdfEditor() {
           }}
           onConfirm={onSigConfirmed}
         />
+      )}
+
+      {sendError && (
+        <div className="fixed inset-x-0 bottom-20 z-40 mx-auto w-fit rounded-lg bg-red-500/90 px-4 py-2 text-sm text-white shadow-lg md:bottom-6">
+          {sendError}
+        </div>
+      )}
+
+      {shareLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur sm:p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-panel p-5 shadow-glow sm:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold sm:text-lg">
+                Ready to send
+              </h3>
+              <button
+                onClick={() => setShareLink(null)}
+                className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-text"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mb-3 text-sm text-muted">
+              Share this link with your recipient — they can sign without an
+              account.
+            </p>
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-sm">{shareLink}</span>
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(shareLink);
+                  setLinkCopied(true);
+                  setTimeout(() => setLinkCopied(false), 1500);
+                }}
+                className="shrink-0 rounded-md p-1.5 text-muted hover:bg-white/5 hover:text-text"
+                aria-label="Copy link"
+              >
+                {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              </button>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setShareLink(null)}
+                className="btn-ghost w-full justify-center sm:w-auto"
+              >
+                Stay here
+              </button>
+              <button
+                onClick={() => router.push("/requests")}
+                className="btn-primary w-full justify-center sm:w-auto"
+              >
+                View sent requests
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,9 +1,12 @@
 # AGENTS.md
 
-SignFlow — a single-page Next.js 15 (App Router) app that lets a user upload a
-PDF, place signature/text/date fields on it, and export a signed PDF. There is
-**no backend**: everything (rendering, editing, signing, export) happens
-client-side in the browser.
+SignFlow — a Next.js 15 (App Router) app that lets a user upload a PDF, place
+signature/text/date fields on it, and either export a signed PDF locally or
+send a link so someone else can fill it in and sign. There are **no user
+accounts/auth anywhere** — the "send for signature" flow is backed by
+Supabase (Postgres + Storage), but all rendering, field placement, and PDF
+composition still happen entirely client-side in the browser; only the
+upload/share/complete steps touch the server.
 
 ## Commands
 
@@ -43,6 +46,50 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   (`renderPdfPages`) and must match the `pdfjs-dist` version pinned in
   `package.json`; bumping `pdfjs-dist` requires re-running the postinstall
   copy step.
+
+## Signature request flow (Supabase, no auth)
+
+- No accounts, no login, no cookies. The browser never talks to Supabase
+  directly; every DB/Storage operation goes through a Next.js route handler
+  using `src/lib/supabase/admin.ts` (service-role key). RLS on
+  `signature_requests` and the `documents` storage bucket is enabled with
+  **no permissive policies**, so only the service role can read/write —
+  losing that key is the only way to leak data.
+- Schema/RPCs live in `supabase/migrations/0001_init.sql` (apply manually via
+  the Supabase SQL editor): `signature_requests` table (keyed by a random
+  `token`, no `owner_id`), `get_request_by_token(t)`, and
+  `complete_request(t, signed_path, fields)`.
+- `Field.assignee` (`"sender" | "recipient"`, `src/types/pdf-editor.ts`)
+  distinguishes who fills a field in. The sender fills/signs `"sender"`
+  fields directly in `PdfEditor` (existing tool-placement flow, unchanged).
+  Clicking "Send for signature" switches `PdfEditor` into a second mode
+  (`RecipientAssignBar` replaces `TopBar`) where every field placed is
+  tagged `"recipient"` and left blank — these are the areas the next signer
+  must fill. `FieldBox` color-codes the two (`accent` = you, `accent2` =
+  next signer).
+- Sender flow: clicking "Generate link" in `RecipientAssignBar` `POST`s the
+  PDF + all fields (sender values preserved, recipient values blank) to
+  `src/app/api/requests/route.ts`, which uploads the original PDF to
+  Storage (`documents/{id}/original.pdf`) and inserts a row — it 400s if no
+  `"recipient"` field is present. The returned `{ id, token }` is stashed in
+  the browser's `localStorage` (`src/lib/sent-requests.ts`) — there is no
+  server-side list of "my requests", so `/requests`
+  (`src/app/requests/page.tsx`) only shows what this browser remembers,
+  polling `GET /api/requests/[id]` for status.
+- Signer flow: `/sign/[token]` (`src/app/sign/[token]/page.tsx`) is a server
+  component that looks up the row directly (service role bypasses RLS),
+  404s if missing, shows an "already signed" screen if `status=completed`,
+  otherwise generates a short-lived signed Storage URL and renders
+  `SignPdfClient`, which reuses `renderPdfPages`/`buildSignedPdfBytes`
+  (extracted in `src/lib/pdf-export.ts`) and a read-only-position variant of
+  the field UI (`src/components/sign/`). `SignFieldBox` renders `"sender"`
+  fields as plain read-only overlays (so the recipient can see the sender's
+  signature/answers) and only `"recipient"` fields as editable — the
+  "submit" button is only enabled once every `"recipient"` field has a
+  value. On submit it builds the final PDF client-side (baking in *all*
+  fields, both signers) and `POST`s it to
+  `src/app/api/sign/[token]/complete/route.ts`, which uploads
+  `documents/{id}/signed.pdf` and calls `complete_request`.
 
 ## Styling
 

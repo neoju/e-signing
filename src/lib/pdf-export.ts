@@ -2,11 +2,10 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { dataUrlToBytes, downloadBlob } from "@/lib/file-utils";
 import type { Field } from "@/types/pdf-editor";
 
-export async function exportSignedPdf(
+export async function buildSignedPdfBytes(
   pdfBytes: ArrayBuffer,
   fields: Field[],
-  fileName: string,
-) {
+): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdfBytes);
   const helv = await doc.embedFont(StandardFonts.Helvetica);
   const docPages = doc.getPages();
@@ -34,7 +33,15 @@ export async function exportSignedPdf(
       });
     }
   }
-  const out = await doc.save();
+  return doc.save();
+}
+
+export async function exportSignedPdf(
+  pdfBytes: ArrayBuffer,
+  fields: Field[],
+  fileName: string,
+) {
+  const out = await buildSignedPdfBytes(pdfBytes, fields);
   downloadBlob(
     new Blob([out], { type: "application/pdf" }),
     fileName.replace(/\.pdf$/i, "") + "-signed.pdf",
