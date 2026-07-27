@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
 import SignatureCanvas from "react-signature-canvas";
-import { X, PenLine, Type, Upload, Trash2 } from "lucide-react";
+import { X, PenLine, Type, Upload, Trash2, BookMarked, Loader2 } from "lucide-react";
 import clsx from "clsx";
+import type { SavedSignature } from "@/types/signature";
 
-type Tab = "draw" | "type" | "upload";
+type Tab = "saved" | "draw" | "type" | "upload";
 
 const SIGNATURE_FONTS = [
   { id: "instrument", label: "Elegant", family: '"Instrument Serif", serif', italic: true },
@@ -18,17 +21,51 @@ type SignatureFont = (typeof SIGNATURE_FONTS)[number];
 export function SignatureModal({
   onClose,
   onConfirm,
+  variant = "editor",
 }: {
   onClose: () => void;
   onConfirm: (dataUrl: string) => void;
+  /** "editor" places the result into a field; "library" only saves it. */
+  variant?: "editor" | "library";
 }) {
-  const [tab, setTab] = useState<Tab>("draw");
+  const { data: session } = useSession();
+  const signedIn = Boolean(session?.user?.email);
+
+  const [savedSignatures, setSavedSignatures] = useState<SavedSignature[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(signedIn && variant === "editor");
+  const [tab, setTab] = useState<Tab>(variant === "library" ? "draw" : "draw");
+  const [saveToLibrary, setSaveToLibrary] = useState(true);
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const sigRef = useRef<SignatureCanvas | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 560, height: 220 });
   const [typed, setTyped] = useState("");
   const [font, setFont] = useState<SignatureFont>(SIGNATURE_FONTS[0]);
   const [uploaded, setUploaded] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!signedIn || variant !== "editor") return;
+    let cancelled = false;
+    setLoadingSaved(true);
+    (async () => {
+      try {
+        const res = await fetch("/api/signatures");
+        if (!res.ok) return;
+        const data: { signatures: SavedSignature[] } = await res.json();
+        if (cancelled) return;
+        setSavedSignatures(data.signatures);
+        if (data.signatures.length > 0) setTab("saved");
+      } finally {
+        if (!cancelled) setLoadingSaved(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn]);
 
   useEffect(() => {
     if (tab !== "draw") return;
@@ -49,28 +86,75 @@ export function SignatureModal({
     return () => ro.disconnect();
   }, [tab]);
 
-  const confirm = () => {
+  const persistToLibrary = async (dataUrl: string): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/signatures", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageDataUrl: dataUrl }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setSaveError(body?.error ?? "Failed to save signature");
+        return false;
+      }
+      return true;
+    } catch {
+      setSaveError("Failed to save signature");
+      return false;
+    }
+  };
+
+  const confirm = async () => {
+    let dataUrl: string | null = null;
     if (tab === "draw") {
       const c = sigRef.current;
       if (!c || c.isEmpty()) return;
-      onConfirm(c.getCanvas().toDataURL("image/png"));
-      return;
-    }
-    if (tab === "type") {
+      dataUrl = c.getCanvas().toDataURL("image/png");
+    } else if (tab === "type") {
       if (!typed.trim()) return;
-      onConfirm(renderTypedSignature(typed, font));
-      return;
+      dataUrl = renderTypedSignature(typed, font);
+    } else if (tab === "upload" && uploaded) {
+      dataUrl = uploaded;
     }
-    if (tab === "upload" && uploaded) {
-      onConfirm(uploaded);
+    if (!dataUrl) return;
+
+    const shouldSave = signedIn && (variant === "library" || saveToLibrary);
+    if (shouldSave) {
+      setSaveError(null);
+      setSavingToLibrary(true);
+      const ok = await persistToLibrary(dataUrl);
+      setSavingToLibrary(false);
+      // In library mode, saving is the whole point — abort if it failed so
+      // the user sees the error. In editor mode, saving is a bonus; still
+      // let them use the signature on the current document.
+      if (!ok && variant === "library") return;
+    }
+    onConfirm(dataUrl);
+  };
+
+  const useSaved = (sig: SavedSignature) => {
+    onConfirm(sig.imageDataUrl);
+  };
+
+  const deleteSaved = async (id: string) => {
+    setSavedSignatures((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await fetch(`/api/signatures/${id}`, { method: "DELETE" });
+    } catch {
+      // best-effort; the manage page will reflect the real state on next load
     }
   };
+
+  const showSavedTab = variant === "editor" && signedIn;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur sm:p-4">
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-2xl border border-border bg-panel shadow-glow">
         <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 sm:px-6 sm:py-4">
-          <h3 className="text-base font-semibold sm:text-lg">Add your signature</h3>
+          <h3 className="text-base font-semibold sm:text-lg">
+            {variant === "library" ? "Add a signature" : "Add your signature"}
+          </h3>
           <button
             onClick={onClose}
             className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-text"
@@ -81,6 +165,11 @@ export function SignatureModal({
         </div>
 
         <div className="flex shrink-0 gap-1 border-b border-border px-2 pt-2 sm:px-3 sm:pt-3">
+          {showSavedTab && (
+            <TabBtn active={tab === "saved"} onClick={() => setTab("saved")} icon={<BookMarked className="h-4 w-4" />}>
+              Saved
+            </TabBtn>
+          )}
           <TabBtn active={tab === "draw"} onClick={() => setTab("draw")} icon={<PenLine className="h-4 w-4" />}>
             Draw
           </TabBtn>
@@ -93,6 +182,59 @@ export function SignatureModal({
         </div>
 
         <div className="p-4 sm:p-6">
+          {tab === "saved" && (
+            <div>
+              {loadingSaved ? (
+                <div className="grid place-items-center py-10 text-muted">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : savedSignatures.length === 0 ? (
+                <div className="grid place-items-center rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted">
+                  No saved signatures yet — draw, type, or upload one and
+                  it&apos;ll show up here.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {savedSignatures.map((sig) => (
+                    <div
+                      key={sig.id}
+                      className="group relative rounded-lg border border-border bg-white p-2"
+                    >
+                      <button
+                        onClick={() => useSaved(sig)}
+                        className="block w-full"
+                        aria-label={`Use ${sig.name}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={sig.imageDataUrl}
+                          alt={sig.name}
+                          className="h-14 w-full object-contain"
+                        />
+                      </button>
+                      <p className="mt-1 truncate text-center text-[11px] text-neutral-500">
+                        {sig.isDefault ? "Default" : sig.name}
+                      </p>
+                      <button
+                        onClick={() => deleteSaved(sig.id)}
+                        aria-label={`Delete ${sig.name}`}
+                        className="absolute right-1 top-1 hidden rounded-md bg-white/90 p-1 text-neutral-500 shadow hover:text-red-600 group-hover:block"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Link
+                href="/signatures"
+                className="mt-4 inline-block text-xs text-muted hover:text-text"
+              >
+                Manage all signatures →
+              </Link>
+            </div>
+          )}
+
           {tab === "draw" && (
             <div>
               <div className="rounded-xl border border-dashed border-border bg-white p-2">
@@ -184,12 +326,44 @@ export function SignatureModal({
               )}
             </div>
           )}
+
+          {tab !== "saved" && variant === "editor" && signedIn && (
+            <label className="mt-4 flex items-center gap-2 text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={saveToLibrary}
+                onChange={(e) => setSaveToLibrary(e.target.checked)}
+                className="h-4 w-4 rounded border-border accent-accent"
+              />
+              Save to my signatures for next time
+            </label>
+          )}
         </div>
 
-        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:justify-end sm:px-6 sm:py-4">
-          <button onClick={onClose} className="btn-ghost w-full justify-center sm:w-auto">Cancel</button>
-          <button onClick={confirm} className="btn-primary w-full justify-center sm:w-auto">Insert signature</button>
-        </div>
+        {tab !== "saved" && (
+          <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-6 sm:py-4">
+            {saveError && (
+              <p className="mr-auto text-sm text-red-400 sm:text-left">{saveError}</p>
+            )}
+            <button onClick={onClose} className="btn-ghost w-full justify-center sm:w-auto">
+              Cancel
+            </button>
+            <button
+              onClick={confirm}
+              disabled={savingToLibrary}
+              className={clsx(
+                "btn-primary w-full justify-center sm:w-auto",
+                savingToLibrary && "cursor-not-allowed opacity-70",
+              )}
+            >
+              {savingToLibrary
+                ? "Saving…"
+                : variant === "library"
+                  ? "Save signature"
+                  : "Insert signature"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

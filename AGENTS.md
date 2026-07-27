@@ -154,6 +154,35 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   of silently failing — signing in is a full OAuth redirect, so current
   in-memory edits are lost, which the modal calls out explicitly.
 
+## Signature library
+
+- Signed-in users can save signatures (drawn/typed/uploaded PNG data URLs)
+  and reuse them across documents instead of redrawing every time.
+  `supabase/migrations/0004_add_signatures.sql` adds a `signatures` table
+  (`owner_email`, `name`, `image_data_url`, `is_default`) — images are
+  stored directly as `text` (no storage bucket) since they're small.
+  `src/types/signature.ts` defines the client-facing `SavedSignature` shape.
+- `src/app/api/signatures/route.ts` (`GET`/`POST`) and
+  `src/app/api/signatures/[id]/route.ts` (`PATCH`/`DELETE`) are all
+  session-gated and ownership-checked, following the same pattern as
+  `/api/documents`. Saving the *first* signature (or passing
+  `isDefault: true`) unsets any previous default for that `owner_email`
+  first — only one signature can be default at a time.
+- `src/components/SignatureModal.tsx` grew a `variant` prop: `"editor"`
+  (default, used from `PdfEditor`) adds a "Saved" tab (fetched from
+  `GET /api/signatures`) to pick an existing signature, plus a "Save to my
+  signatures for next time" checkbox on the Draw/Type/Upload tabs;
+  `"library"` (used from the manage page) always saves and skips the
+  "Saved" tab. Either way `onConfirm(dataUrl)` fires the same way regardless
+  of source, so callers don't need to know which tab was used.
+- `src/app/signatures/page.tsx` ("Your Signatures", linked from
+  `AuthMenu`) renders `src/components/signatures/SignatureManager.tsx` — a
+  grid of saved signatures with rename/set-default/delete actions and an
+  "Add signature" card that opens `SignatureModal` in `"library"` mode.
+- `PdfEditor` fetches `GET /api/signatures` on session change and preloads
+  the default (or first) signature into `savedSig` so placing a signature
+  field skips the modal entirely.
+
 ## Upload size limit
 
 - `src/lib/upload-limits.ts` caps PDFs at **20 MB** (`MAX_PDF_BYTES`).
