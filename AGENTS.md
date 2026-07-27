@@ -215,6 +215,34 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   the default (or first) signature into `savedSig` so placing a signature
   field skips the modal entirely.
 
+## Audit log
+
+- `supabase/migrations/0006_add_audit_log.sql` adds an `audit_log` table
+  keyed by `request_id` with `event_type` ('sent' / 'viewed' / 'signed'),
+  `actor` ('sender' / 'recipient'), plus `ip_address`, `user_agent`, and
+  `created_at`. `src/types/audit-log.ts` mirrors that shape client-side.
+- `src/lib/audit-log.ts` exposes `recordAuditEvent(supabase, {...})` — a
+  thin insert wrapper. All callers pass IP + UA extracted with
+  `src/lib/request-ip.ts` (`getClientIp`) from the incoming `NextRequest`.
+- Events are recorded at three points: `POST /api/documents/send` logs
+  `'sent'` right after the row is inserted (the "start" of the trail); a
+  dedicated `POST /api/sign/[token]/view/route.ts`, fired from a mount
+  `useEffect` in `SignPdfClient`, logs `'viewed'` the moment the recipient
+  opens the document (no-ops if the token is unknown or already completed);
+  `POST /api/sign/[token]/complete/route.ts` logs `'signed'` right after
+  `complete_request` succeeds.
+- `GET /api/documents/[id]/audit/route.ts` returns the ordered event list
+  for a request. Like the status payload from `GET /api/documents/[id]`,
+  it's unauthenticated but keyed by the unguessable `id` — the same trust
+  model lets both signed-in and anonymous senders view their own log.
+- `src/components/requests/AuditLogModal.tsx` renders the timeline (fetched
+  on open) with `src/lib/user-agent.ts` (`describeUserAgent`) turning the raw
+  UA string into a short label (e.g. "Chrome on macOS") next to the IP and
+  timestamp — a small hand-rolled regex sniffer, no parsing dependency. It's
+  opened via a `History` icon button in `RequestsListOwned` and
+  `RequestsListLocal` for any row that has actually been sent (`pending` or
+  `completed`, not `draft`).
+
 ## Upload size limit
 
 - `src/lib/upload-limits.ts` caps PDFs at **20 MB** (`MAX_PDF_BYTES`).

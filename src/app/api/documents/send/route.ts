@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { recordAuditEvent } from "@/lib/audit-log";
+import { getClientIp } from "@/lib/request-ip";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { pdfTooLarge } from "@/lib/upload-limits";
 import type { Field } from "@/types/pdf-editor";
@@ -74,6 +76,14 @@ export async function POST(req: NextRequest) {
     await supabase.storage.from("documents").remove([originalPath]);
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
+
+  await recordAuditEvent(supabase, {
+    requestId: id,
+    eventType: "sent",
+    actor: "sender",
+    ipAddress: getClientIp(req),
+    userAgent: req.headers.get("user-agent"),
+  });
 
   return NextResponse.json({ id, token });
 }

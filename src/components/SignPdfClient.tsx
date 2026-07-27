@@ -49,6 +49,11 @@ export function SignPdfClient({
     };
   }, [pdfUrl]);
 
+  useEffect(() => {
+    // Best-effort audit log entry — fire and forget, never blocks the UI.
+    fetch(`/api/sign/${token}/view`, { method: "POST" }).catch(() => {});
+  }, [token]);
+
   const updateField = (id: string, patch: Partial<Field>) =>
     setFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
 

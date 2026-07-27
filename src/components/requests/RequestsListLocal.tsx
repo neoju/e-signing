@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, Download } from "lucide-react";
+import { Check, Copy, Download, History } from "lucide-react";
 import clsx from "clsx";
+import { AuditLogModal } from "@/components/requests/AuditLogModal";
 import { getSentRequests } from "@/lib/sent-requests";
 import type { RequestStatus, SentRequestRecord } from "@/types/signature-request";
 
@@ -12,13 +13,11 @@ type ViewRecord = SentRequestRecord & {
   loadError?: boolean;
 };
 
-// Fallback dashboard list for anonymous senders (and signed-in senders who
-// also sent from a different browser): reads the request ids from
-// `localStorage` and polls `GET /api/documents/[id]` for status.
 export function RequestsListLocal() {
   const [records, setRecords] = useState<ViewRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [auditId, setAuditId] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = getSentRequests();
@@ -84,6 +83,15 @@ export function RequestsListLocal() {
                   ? "Signed"
                   : "Pending"}
             </span>
+            {!r.loadError && (
+              <button
+                onClick={() => setAuditId(r.id)}
+                className="btn-ghost !px-3"
+                aria-label="View activity log"
+              >
+                <History className="h-4 w-4" />
+              </button>
+            )}
             {r.status === "completed" && r.signedUrl ? (
               <a
                 href={r.signedUrl}
@@ -110,6 +118,8 @@ export function RequestsListLocal() {
           </div>
         </div>
       ))}
+
+      {auditId && <AuditLogModal requestId={auditId} onClose={() => setAuditId(null)} />}
     </div>
   );
 }

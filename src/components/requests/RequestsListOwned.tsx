@@ -2,16 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, Copy, Download, Pencil, Share2 } from "lucide-react";
+import { Check, Copy, Download, History, Pencil, Share2 } from "lucide-react";
 import clsx from "clsx";
+import { AuditLogModal } from "@/components/requests/AuditLogModal";
 import { ShareDraftModal } from "@/components/ShareDraftModal";
 import type { OwnedRequestSummary } from "@/types/signature-request";
 
-// Dashboard list rendered when the visitor is signed in — rows come from
-// `owner_email` on the server, so this is cross-device (unlike the
-// localStorage-backed `RequestsListLocal`). Draft rows link back to the
-// editor via `/?draft={id}` and can also be shared (read-only) via
-// `ShareDraftModal`.
 export function RequestsListOwned({
   initialRequests,
 }: {
@@ -19,6 +15,7 @@ export function RequestsListOwned({
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [shareId, setShareId] = useState<string | null>(null);
+  const [auditId, setAuditId] = useState<string | null>(null);
 
   const copyLink = async (r: OwnedRequestSummary) => {
     await navigator.clipboard.writeText(`${window.location.origin}/sign/${r.token}`);
@@ -78,34 +75,46 @@ export function RequestsListOwned({
                   <Pencil className="h-4 w-4" />
                 </Link>
               </>
-            ) : r.status === "completed" && r.signedUrl ? (
-              <a
-                href={r.signedUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="btn-ghost !px-3"
-                aria-label="Download signed PDF"
-              >
-                <Download className="h-4 w-4" />
-              </a>
             ) : (
-              <button
-                onClick={() => copyLink(r)}
-                className="btn-ghost !px-3"
-                aria-label="Copy signing link"
-              >
-                {copiedId === r.id ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </button>
+              <>
+                <button
+                  onClick={() => setAuditId(r.id)}
+                  className="btn-ghost !px-3"
+                  aria-label="View activity log"
+                >
+                  <History className="h-4 w-4" />
+                </button>
+                {r.status === "completed" && r.signedUrl ? (
+                  <a
+                    href={r.signedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-ghost !px-3"
+                    aria-label="Download signed PDF"
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                ) : r.status === "pending" ? (
+                  <button
+                    onClick={() => copyLink(r)}
+                    className="btn-ghost !px-3"
+                    aria-label="Copy signing link"
+                  >
+                    {copiedId === r.id ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </button>
+                ) : null}
+              </>
             )}
           </div>
         </div>
       ))}
 
       {shareId && <ShareDraftModal documentId={shareId} onClose={() => setShareId(null)} />}
+      {auditId && <AuditLogModal requestId={auditId} onClose={() => setAuditId(null)} />}
     </div>
   );
 }
