@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { recordAuditEvent } from "@/lib/audit-log";
+import { getClientIp } from "@/lib/request-ip";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { pdfTooLarge } from "@/lib/upload-limits";
 
@@ -56,6 +58,14 @@ export async function POST(
   if (completeError) {
     return NextResponse.json({ error: completeError.message }, { status: 500 });
   }
+
+  await recordAuditEvent(supabase, {
+    requestId: requestRow.id,
+    eventType: "signed",
+    actor: "recipient",
+    ipAddress: getClientIp(req),
+    userAgent: req.headers.get("user-agent"),
+  });
 
   return NextResponse.json({ ok: true });
 }
