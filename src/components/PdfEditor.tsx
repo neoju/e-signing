@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Check, Copy, X, Loader2 } from "lucide-react";
 import { SignatureModal } from "./SignatureModal";
+import { ShareDraftModal } from "./ShareDraftModal";
 import { TopBar } from "./pdf-editor/TopBar";
 import { RecipientAssignBar } from "./pdf-editor/RecipientAssignBar";
 import { Sidebar } from "./pdf-editor/Sidebar";
@@ -49,6 +50,8 @@ export function PdfEditor() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showAuthRequired, setShowAuthRequired] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [openingShare, setOpeningShare] = useState(false);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const contentRef = useRef<HTMLDivElement | null>(null);
 
@@ -316,6 +319,16 @@ export function PdfEditor() {
     }
   };
 
+  const openShare = async () => {
+    let id = draftId;
+    if (dirty || !id) {
+      setOpeningShare(true);
+      id = await saveDraft();
+      setOpeningShare(false);
+    }
+    if (id) setShowShareModal(true);
+  };
+
   if (loadingDraft) {
     return (
       <div className="grid min-h-[100dvh] place-items-center bg-bg text-muted">
@@ -369,6 +382,8 @@ export function PdfEditor() {
           saving={saving}
           dirty={dirty}
           canSave={fields.length > 0}
+          onShare={openShare}
+          sharing={openingShare}
         />
       )}
       <div className="flex flex-1 overflow-hidden">
@@ -491,6 +506,10 @@ export function PdfEditor() {
             </div>
           </div>
         </div>
+      )}
+
+      {showShareModal && draftId && (
+        <ShareDraftModal documentId={draftId} onClose={() => setShowShareModal(false)} />
       )}
 
       {shareLink && (
