@@ -12,6 +12,17 @@ export type SignatureRequestRow = {
   fields: Field[];
   created_at: string;
   completed_at: string | null;
+  owner_email: string | null;
+};
+
+// Row returned by GET /api/documents for a logged-in user's dashboard.
+export type OwnedRequestSummary = {
+  id: string;
+  title: string;
+  token: string;
+  status: RequestStatus;
+  createdAt: string;
+  signedUrl: string | null;
 };
 
 // Local record kept in the sender's browser (localStorage) so they can find

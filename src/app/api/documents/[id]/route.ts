@@ -3,6 +3,10 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const SIGNED_URL_TTL_SECONDS = 60 * 10;
 
+// Unauthenticated status lookup keyed by the unguessable request id. Used
+// by `RequestsListLocal` (the localStorage-backed fallback list) to poll
+// whether a sent request has been signed yet and, if so, fetch a
+// short-lived signed URL to the signed PDF.
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },

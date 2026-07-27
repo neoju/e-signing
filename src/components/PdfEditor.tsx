@@ -183,7 +183,7 @@ export function PdfEditor() {
       form.append("title", title);
       form.append("fields", JSON.stringify(fields));
       form.append("file", new Blob([pdfBytes], { type: "application/pdf" }), file.name);
-      const res = await fetch("/api/requests", { method: "POST", body: form });
+      const res = await fetch("/api/documents/send", { method: "POST", body: form });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? "Failed to create signature request");
@@ -362,7 +362,7 @@ export function PdfEditor() {
                 Stay here
               </button>
               <button
-                onClick={() => router.push("/requests")}
+                onClick={() => router.push("/documents")}
                 className="btn-primary w-full justify-center sm:w-auto"
               >
                 View sent requests

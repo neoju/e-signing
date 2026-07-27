@@ -1,9 +1,16 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Field } from "@/types/pdf-editor";
 
+// Creates a signature request ready to be sent (i.e. "Generate link" from
+// the editor's RecipientAssignBar). If a session cookie is present, the row
+// is stamped with `owner_email` so the sender can see it on `/documents`
+// across devices; anonymous sends leave `owner_email` NULL.
 export async function POST(req: NextRequest) {
+  const session = await auth();
+
   const formData = await req.formData();
   const file = formData.get("file");
   const title = String(formData.get("title") ?? "Untitled document");
@@ -40,6 +47,7 @@ export async function POST(req: NextRequest) {
   const id = randomUUID();
   const token = randomBytes(24).toString("base64url");
   const originalPath = `${id}/original.pdf`;
+  const ownerEmail = session?.user?.email ?? null;
 
   const supabase = createSupabaseAdminClient();
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -57,6 +65,7 @@ export async function POST(req: NextRequest) {
     original_path: originalPath,
     token,
     fields: preparedFields,
+    owner_email: ownerEmail,
   });
   if (insertError) {
     await supabase.storage.from("documents").remove([originalPath]);
