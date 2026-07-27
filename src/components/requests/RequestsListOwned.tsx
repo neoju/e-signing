@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Download } from "lucide-react";
+import Link from "next/link";
+import { Check, Copy, Download, Pencil } from "lucide-react";
 import clsx from "clsx";
 import type { OwnedRequestSummary } from "@/types/signature-request";
 
 // Dashboard list rendered when the visitor is signed in — rows come from
 // `owner_email` on the server, so this is cross-device (unlike the
-// localStorage-backed `RequestsListLocal`).
+// localStorage-backed `RequestsListLocal`). Draft rows link back to the
+// editor via `/?draft={id}` so the user can pick up where they left off.
 export function RequestsListOwned({
   initialRequests,
 }: {
@@ -45,12 +47,26 @@ export function RequestsListOwned({
                 "rounded-full px-2.5 py-1 text-xs font-medium",
                 r.status === "completed"
                   ? "bg-emerald-500/10 text-emerald-400"
-                  : "bg-accent/10 text-accent",
+                  : r.status === "draft"
+                    ? "bg-white/10 text-muted"
+                    : "bg-accent/10 text-accent",
               )}
             >
-              {r.status === "completed" ? "Signed" : "Pending"}
+              {r.status === "completed"
+                ? "Signed"
+                : r.status === "draft"
+                  ? "Draft"
+                  : "Pending"}
             </span>
-            {r.status === "completed" && r.signedUrl ? (
+            {r.status === "draft" ? (
+              <Link
+                href={`/?draft=${r.id}`}
+                className="btn-ghost !px-3"
+                aria-label="Continue editing"
+              >
+                <Pencil className="h-4 w-4" />
+              </Link>
+            ) : r.status === "completed" && r.signedUrl ? (
               <a
                 href={r.signedUrl}
                 target="_blank"

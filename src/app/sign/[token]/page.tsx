@@ -22,6 +22,13 @@ export default async function SignPage({
 
   if (!row) notFound();
 
+  // Only rows actively awaiting a recipient's signature are signable. Drafts
+  // (which reuse the same `token` for the read-only share link at
+  // `/view/[token]`) must NOT be reachable here — otherwise the sign flow
+  // would expose draft PDF/fields and bypass any share password the owner
+  // configured. Any non-pending, non-completed status is treated as absent.
+  if (row.status !== "pending" && row.status !== "completed") notFound();
+
   if (row.status === "completed") {
     let signedDocUrl: string | null = null;
     if (row.signed_path) {

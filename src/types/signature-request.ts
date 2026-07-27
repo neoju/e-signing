@@ -1,6 +1,6 @@
 import type { Field } from "./pdf-editor";
 
-export type RequestStatus = "pending" | "completed";
+export type RequestStatus = "draft" | "pending" | "completed";
 
 export type SignatureRequestRow = {
   id: string;
@@ -16,6 +16,8 @@ export type SignatureRequestRow = {
 };
 
 // Row returned by GET /api/documents for a logged-in user's dashboard.
+// Covers both sent requests (draft/pending/completed) and in-progress drafts
+// the user saved from the editor without sending.
 export type OwnedRequestSummary = {
   id: string;
   title: string;
@@ -23,6 +25,14 @@ export type OwnedRequestSummary = {
   status: RequestStatus;
   createdAt: string;
   signedUrl: string | null;
+};
+
+// Payload returned by GET /api/documents/[id] to resume editing a draft.
+export type DraftDocument = {
+  id: string;
+  title: string;
+  fields: Field[];
+  pdfUrl: string;
 };
 
 // Local record kept in the sender's browser (localStorage) so they can find

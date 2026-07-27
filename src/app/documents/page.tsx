@@ -69,7 +69,7 @@ export default async function DocumentsPage() {
           <>
             <p className="mb-6 text-sm text-muted">
               Signed in as <span className="text-text/90">{email}</span> —
-              showing every sent request from this account.
+              showing every draft and sent request from this account.
             </p>
             <RequestsListOwned initialRequests={ownedRequests} />
           </>
@@ -77,7 +77,8 @@ export default async function DocumentsPage() {
           <>
             <p className="mb-4 text-sm text-muted">
               This list is stored only in this browser — it isn&apos;t synced
-              anywhere else.
+              anywhere else, and saved drafts aren&apos;t available while
+              signed out.
             </p>
             <div className="card mb-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted">

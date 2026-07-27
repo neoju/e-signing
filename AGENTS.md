@@ -66,6 +66,9 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   user, `POST /api/documents/send` stamps `session.user.email` onto the row;
   anonymous POSTs leave it NULL. `GET /api/documents` is session-only and
   returns just that user's rows.
+- `supabase/migrations/0003_add_draft_status.sql` widens the `status` check
+  constraint to allow `'draft'` alongside `'pending'`/`'completed'` — see
+  "Saving drafts" below.
 - `Field.assignee` (`"sender" | "recipient"`, `src/types/pdf-editor.ts`)
   distinguishes who fills a field in. The sender fills/signs `"sender"`
   fields directly in `PdfEditor` (existing tool-placement flow, unchanged).
@@ -89,7 +92,10 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
 - Signer flow: `/sign/[token]` (`src/app/sign/[token]/page.tsx`) is a server
   component that looks up the row directly (service role bypasses RLS),
   404s if missing, shows an "already signed" screen if `status=completed`,
-  otherwise generates a short-lived signed Storage URL and renders
+  **404s for any other status (including `'draft'`) — critical, since a
+  draft's `token` will be reused by the read-only view/share flow and
+  serving it here would bypass any share password**, otherwise generates a
+  short-lived signed Storage URL and renders
   `SignPdfClient`, which reuses `renderPdfPages`/`buildSignedPdfBytes`
   (extracted in `src/lib/pdf-export.ts`) and a read-only-position variant of
   the field UI (`src/components/sign/`). `SignFieldBox` renders `"sender"`
@@ -114,6 +120,53 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   `SignatureModal.tsx` depends on these exact font families being loaded —
   keep the two in sync if fonts change.
 
+## Saving drafts
+
+- Signed-in users can save the document they're currently editing without
+  sending it — the `Save` button in `TopBar` (hidden state logic lives in
+  `PdfEditor`: a `dirty` flag flips true on any field mutation and resets on
+  load/save, driving the button's enabled state and "Save"/"Saved" label).
+- `POST /api/documents` (`src/app/api/documents/route.ts`) creates a new
+  `signature_requests` row with `status: "draft"` (no `"recipient"` field
+  required, unlike `/api/documents/send`). `PATCH /api/documents/[id]`
+  overwrites an existing draft's PDF/fields/title in place (`upsert` on the
+  same storage path) — both require a session and, for `PATCH`, that
+  `owner_email` matches and `status` is still `"draft"`.
+- `PdfEditor` tracks `draftId`; the first successful save creates the row
+  and rewrites the URL to `/?draft={id}` via `router.replace` (no reload) so
+  a refresh resumes editing the same draft; subsequent saves `PATCH` it.
+- `GET /api/documents/[id]` (`src/app/api/documents/[id]/route.ts`) serves
+  two audiences from one handler: anyone holding the (unguessable) id gets a
+  lightweight `{ id, title, token, status, signedUrl }` status payload —
+  this is what `RequestsListLocal` polls for both logged-in and anonymous
+  senders — while the signed-in owner of a still-`"draft"` row additionally
+  gets `fields`/`pdfUrl` so the editor can resume it; non-owners get 404 for
+  a `"draft"` row instead of the status payload, since draft content is
+  private. `PdfEditor` reads a `?draft=` query param on mount
+  (`src/app/page.tsx` wraps it in `<Suspense>` for `useSearchParams`),
+  fetches that PDF, and rebuilds a `File` from the bytes so the rest of the
+  editor is unaware it didn't come from a local upload. `RequestsListOwned`
+  renders `"draft"` rows with a "Draft" badge and a pencil button linking to
+  `/?draft={id}`.
+- Saving requires sign-in (there's no anonymous identity to key a draft on).
+  If `PdfEditor` calls `saveDraft()` while logged out (or a save 401s
+  because the session expired), it shows an "Sign in to save" modal instead
+  of silently failing — signing in is a full OAuth redirect, so current
+  in-memory edits are lost, which the modal calls out explicitly.
+
+## Upload size limit
+
+- `src/lib/upload-limits.ts` caps PDFs at **20 MB** (`MAX_PDF_BYTES`).
+  Every route handler that accepts a `file` form part
+  (`/api/documents`, `/api/documents/[id]`, `/api/documents/send`,
+  `/api/sign/[token]/complete`) calls `pdfTooLarge(file)` right after
+  asserting `file instanceof Blob` and short-circuits with a 413.
+- Client mirrors the check: `PdfEditor.loadFile` (used by both the file
+  picker and the drag-drop handler) rejects too-large files up front with
+  an alert, and `Uploader` advertises "max 20 MB" so the number stays in
+  sync. Server responses on 413 flow into the existing
+  `sendError`/`saveError` states via each caller's `data?.error` fallback.
+
 ## Auth (optional)
 
 - Auth.js v5 (`next-auth@beta`), configured in `src/auth.ts` with a Google
@@ -131,8 +184,8 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   sign-in is registration. `src/components/AuthMenu.tsx` is a client
   component always rendered as a dropdown (avatar+email when signed in, a
   generic user icon when signed out) containing a "Your Documents" link
-  (`/documents`) plus "Sign in"/"Sign out"; it's mounted in the `Uploader`
-  header and on `/documents`. The `SessionProvider` from
+  (`/documents`) plus "Sign in"/"Sign out"; it's mounted in `TopBar` and in
+  the `Uploader` header and on `/documents`. The `SessionProvider` from
   `next-auth/react` is wired in `src/app/layout.tsx` via
   `src/components/AuthSessionProvider.tsx`.
 - `src/types/next-auth.d.ts` narrows `session.user.email` to

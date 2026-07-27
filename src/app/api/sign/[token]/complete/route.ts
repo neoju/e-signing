@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { pdfTooLarge } from "@/lib/upload-limits";
 
 export async function POST(
   req: NextRequest,
@@ -26,6 +27,8 @@ export async function POST(
   if (!(file instanceof Blob)) {
     return NextResponse.json({ error: "Missing signed PDF" }, { status: 400 });
   }
+  const sizeErr = pdfTooLarge(file);
+  if (sizeErr) return sizeErr;
 
   let fields = requestRow.fields;
   if (typeof fieldsRaw === "string") {

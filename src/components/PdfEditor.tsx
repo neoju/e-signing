@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Check, Copy, X } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { Check, Copy, X, Loader2 } from "lucide-react";
 import { SignatureModal } from "./SignatureModal";
 import { TopBar } from "./pdf-editor/TopBar";
 import { RecipientAssignBar } from "./pdf-editor/RecipientAssignBar";
@@ -14,12 +15,16 @@ import { Uploader } from "./pdf-editor/Uploader";
 import { renderPdfPages } from "@/lib/pdf-render";
 import { exportSignedPdf } from "@/lib/pdf-export";
 import { addSentRequest } from "@/lib/sent-requests";
+import { MAX_PDF_BYTES, MAX_PDF_MB } from "@/lib/upload-limits";
 import type { Field, FieldAssignee, FieldKind, RenderedPage } from "@/types/pdf-editor";
+import type { DraftDocument } from "@/types/signature-request";
 
 type EditorMode = "edit" | "assign-recipient";
 
 export function PdfEditor() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const [file, setFile] = useState<File | null>(null);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
   const [pages, setPages] = useState<RenderedPage[]>([]);
@@ -29,6 +34,7 @@ export function PdfEditor() {
   const [showSigModal, setShowSigModal] = useState(false);
   const [pendingSigField, setPendingSigField] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingDraft, setLoadingDraft] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [mode, setMode] = useState<EditorMode>("edit");
   const [sending, setSending] = useState(false);
@@ -37,20 +43,64 @@ export function PdfEditor() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [activePage, setActivePage] = useState(0);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showAuthRequired, setShowAuthRequired] = useState(false);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   const loadFile = useCallback(async (f: File) => {
+    if (f.size > MAX_PDF_BYTES) {
+      window.alert(`PDF is too large (max ${MAX_PDF_MB} MB).`);
+      return;
+    }
     setLoading(true);
     setFields([]);
     setActivePage(0);
     setMode("edit");
     setFile(f);
+    setDraftId(null);
+    setDirty(false);
     const buf = await f.arrayBuffer();
     setPdfBytes(buf);
     const rendered = await renderPdfPages(buf);
     setPages(rendered);
     setLoading(false);
+  }, []);
+
+  const loadDraft = useCallback(async (id: string) => {
+    setLoadingDraft(true);
+    try {
+      const res = await fetch(`/api/documents/${id}`);
+      if (!res.ok) throw new Error("Failed to load document");
+      const data: DraftDocument = await res.json();
+      const pdfRes = await fetch(data.pdfUrl);
+      const buf = await pdfRes.arrayBuffer();
+      const f = new File([buf], `${data.title}.pdf`, { type: "application/pdf" });
+      setFile(f);
+      setPdfBytes(buf);
+      const rendered = await renderPdfPages(buf.slice(0));
+      setPages(rendered);
+      setFields(data.fields);
+      setActivePage(0);
+      setMode("edit");
+      setDraftId(data.id);
+      setDirty(false);
+    } catch {
+      // Fall back silently to the empty uploader if the draft can't be loaded
+      // (deleted, not owned by this account, session expired, etc).
+    } finally {
+      setLoadingDraft(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const draftParam = searchParams.get("draft");
+    if (draftParam) loadDraft(draftParam);
+    // Only ever run this for the draft id present on first render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onDrop = (e: React.DragEvent) => {
@@ -110,6 +160,7 @@ export function PdfEditor() {
       value: "",
       assignee,
     };
+    setDirty(true);
     if (assignee === "recipient") {
       // The next signer fills these in themselves — never pre-fill or use
       // the sender's own saved signature here.
@@ -133,10 +184,13 @@ export function PdfEditor() {
     setTool(null);
   };
 
-  const updateField = (id: string, patch: Partial<Field>) =>
+  const updateField = (id: string, patch: Partial<Field>) => {
+    setDirty(true);
     setFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  };
 
   const removeField = (id: string) => {
+    setDirty(true);
     setFields((prev) => prev.filter((f) => f.id !== id));
     setSelectedFieldId((prev) => (prev === id ? null : prev));
   };
@@ -204,6 +258,56 @@ export function PdfEditor() {
     }
   };
 
+  const saveDraft = async (): Promise<string | null> => {
+    if (!pdfBytes || !file) return null;
+    if (!session?.user?.email) {
+      setShowAuthRequired(true);
+      return null;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const title = file.name.replace(/\.pdf$/i, "");
+      const form = new FormData();
+      form.append("title", title);
+      form.append("fields", JSON.stringify(fields));
+      form.append("file", new Blob([pdfBytes], { type: "application/pdf" }), file.name);
+      const url = draftId ? `/api/documents/${draftId}` : "/api/documents";
+      const res = await fetch(url, { method: draftId ? "PATCH" : "POST", body: form });
+      if (res.status === 401) {
+        setShowAuthRequired(true);
+        return null;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? "Failed to save document");
+      }
+      const data: { id: string } = await res.json();
+      setDraftId(data.id);
+      setDirty(false);
+      if (!draftId) {
+        router.replace(`/?draft=${data.id}`, { scroll: false });
+      }
+      return data.id;
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Something went wrong");
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loadingDraft) {
+    return (
+      <div className="grid min-h-[100dvh] place-items-center bg-bg text-muted">
+        <div className="flex items-center gap-2 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading your document…
+        </div>
+      </div>
+    );
+  }
+
   if (!file) {
     return (
       <Uploader
@@ -233,12 +337,19 @@ export function PdfEditor() {
             setFields([]);
             setActivePage(0);
             setMode("edit");
+            setDraftId(null);
+            setDirty(false);
+            router.replace("/", { scroll: false });
           }}
           onExport={exportPdf}
           exporting={exporting}
           canExport={fields.length > 0}
           onSend={beginAssignRecipient}
           canSend={!loading}
+          onSave={saveDraft}
+          saving={saving}
+          dirty={dirty}
+          canSave={fields.length > 0}
         />
       )}
       <div className="flex flex-1 overflow-hidden">
@@ -318,6 +429,48 @@ export function PdfEditor() {
       {sendError && (
         <div className="fixed inset-x-0 bottom-20 z-40 mx-auto w-fit rounded-lg bg-red-500/90 px-4 py-2 text-sm text-white shadow-lg md:bottom-6">
           {sendError}
+        </div>
+      )}
+
+      {saveError && (
+        <div className="fixed inset-x-0 bottom-20 z-40 mx-auto w-fit rounded-lg bg-red-500/90 px-4 py-2 text-sm text-white shadow-lg md:bottom-6">
+          {saveError}
+        </div>
+      )}
+
+      {showAuthRequired && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur sm:p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-panel p-5 shadow-glow sm:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold sm:text-lg">Sign in to save</h3>
+              <button
+                onClick={() => setShowAuthRequired(false)}
+                className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-text"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mb-6 text-sm text-muted">
+              Saving documents requires an account. Signing in reloads the
+              page, so download a copy first if you don&apos;t want to lose
+              your current edits.
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setShowAuthRequired(false)}
+                className="btn-ghost w-full justify-center sm:w-auto"
+              >
+                Not now
+              </button>
+              <button
+                onClick={() => router.push("/login")}
+                className="btn-primary w-full justify-center sm:w-auto"
+              >
+                Sign in
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -31,7 +31,7 @@ export function Uploader({
           >
             <Upload className="mb-4 h-8 w-8 text-accent" />
             <h2 className="mb-2 text-xl font-semibold sm:text-2xl">Drop your PDF here</h2>
-            <p className="mb-6 text-sm text-muted">or tap to choose a file</p>
+            <p className="mb-6 text-sm text-muted">or tap to choose a file — max 20 MB</p>
             <span className="btn-primary">Choose PDF</span>
             <input
               type="file"

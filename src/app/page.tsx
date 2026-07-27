@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import dynamic from "next/dynamic";
 
 const PdfEditor = dynamic(
@@ -15,5 +16,15 @@ const PdfEditor = dynamic(
 );
 
 export default function Home() {
-  return <PdfEditor />;
+  return (
+    <Suspense
+      fallback={
+        <div className="grid min-h-screen place-items-center bg-bg text-muted">
+          Loading…
+        </div>
+      }
+    >
+      <PdfEditor />
+    </Suspense>
+  );
 }
