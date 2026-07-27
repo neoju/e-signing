@@ -1,4 +1,4 @@
-import { Upload, Download, FileSignature, Send, Save, Check } from "lucide-react";
+import { Upload, Download, FileSignature, Send, Save, Check, Share2 } from "lucide-react";
 import clsx from "clsx";
 import { AuthMenu } from "@/components/AuthMenu";
 
@@ -14,6 +14,8 @@ export function TopBar({
   saving,
   dirty,
   canSave,
+  onShare,
+  sharing,
 }: {
   fileName: string;
   onReset: () => void;
@@ -26,6 +28,8 @@ export function TopBar({
   saving: boolean;
   dirty: boolean;
   canSave: boolean;
+  onShare: () => void;
+  sharing: boolean;
 }) {
   return (
     <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-panel px-3 py-2.5 sm:px-6 sm:py-3">
@@ -56,6 +60,17 @@ export function TopBar({
           <span className="hidden sm:inline">
             {saving ? "Saving…" : dirty ? "Save" : "Saved"}
           </span>
+        </button>
+        <button
+          onClick={onShare}
+          disabled={!canSave || sharing}
+          className={clsx(
+            "btn-ghost !px-3 sm:!px-5",
+            (!canSave || sharing) && "cursor-not-allowed opacity-50",
+          )}
+        >
+          <Share2 className="h-4 w-4" />
+          <span className="hidden sm:inline">{sharing ? "Opening…" : "Share"}</span>
         </button>
         <button
           onClick={onExport}

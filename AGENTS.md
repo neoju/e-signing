@@ -154,6 +154,38 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   of silently failing — signing in is a full OAuth redirect, so current
   in-memory edits are lost, which the modal calls out explicitly.
 
+## Draft sharing (read-only view)
+
+- `supabase/migrations/0005_add_draft_sharing.sql` adds share fields to
+  `signature_requests` (`share_enabled`, `share_password_hash`) plus the
+  per-token brute-force counter columns
+  (`share_failed_attempts`, `share_locked_until`). Password hashes are
+  scrypt-based (`src/lib/password.ts`) — no external hashing dependency.
+- `POST /api/documents/[id]/share` (owner-only, session-gated) toggles
+  sharing and stores/clears the hashed password. `POST /api/view/[token]`
+  verifies a submitted password and returns a signed PDF URL + fields to
+  render read-only.
+- `/view/[token]` (`src/app/view/[token]/page.tsx`) is the recipient-side
+  page: enter password (if set), then `ViewSharedDraftClient` renders the
+  PDF pages via `renderPdfPages` and overlays every field as read-only
+  (`ViewFieldBox`/`ViewPageCanvas`). No editing, no submit — this is a
+  view-only link, distinct from `/sign/[token]` (which requires the row
+  to be in `pending`/`completed` status).
+- Rate limiting is two-layered so neither a single-token guessing loop nor
+  a distributed one can burn through the password: `0007` adds the
+  per-token counter (columns above) and `0008` adds a per-IP counter
+  (`share_password_attempts` table, keyed by `(token, ip)`).
+  `src/lib/rate-limit.ts` shares the exponential-backoff schedule
+  (`MAX_FREE_ATTEMPTS=5`, `BASE_LOCK_SECONDS=15`, `MAX_LOCK_SECONDS=15min`)
+  between both limits so the two behave identically; a request is throttled
+  when *either* limit is locked. `src/lib/request-ip.ts` extracts the
+  client IP (`x-forwarded-for` first, `x-real-ip` fallback).
+- Editor UI: `TopBar` gains a Share button that calls `openShare` on
+  `PdfEditor` — if the current document is dirty or has never been saved,
+  it saves a draft first, then opens `ShareDraftModal` for that
+  `documentId`. The dashboard's `RequestsListOwned` renders a Share button
+  next to the pencil on draft rows.
+
 ## Signature library
 
 - Signed-in users can save signatures (drawn/typed/uploaded PNG data URLs)
