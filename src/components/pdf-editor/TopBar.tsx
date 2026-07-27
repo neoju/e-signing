@@ -1,5 +1,6 @@
-import { Upload, Download, FileSignature, Send } from "lucide-react";
+import { Upload, Download, FileSignature, Send, Save, Check } from "lucide-react";
 import clsx from "clsx";
+import { AuthMenu } from "@/components/AuthMenu";
 
 export function TopBar({
   fileName,
@@ -9,6 +10,10 @@ export function TopBar({
   canExport,
   onSend,
   canSend,
+  onSave,
+  saving,
+  dirty,
+  canSave,
 }: {
   fileName: string;
   onReset: () => void;
@@ -17,6 +22,10 @@ export function TopBar({
   canExport: boolean;
   onSend: () => void;
   canSend: boolean;
+  onSave: () => void;
+  saving: boolean;
+  dirty: boolean;
+  canSave: boolean;
 }) {
   return (
     <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-panel px-3 py-2.5 sm:px-6 sm:py-3">
@@ -30,6 +39,23 @@ export function TopBar({
         <button onClick={onReset} className="btn-ghost !px-3 sm:!px-5">
           <span className="hidden sm:inline">Change file</span>
           <Upload className="h-4 w-4 sm:hidden" />
+        </button>
+        <button
+          onClick={onSave}
+          disabled={!canSave || !dirty || saving}
+          className={clsx(
+            "btn-ghost !px-3 sm:!px-5",
+            (!canSave || !dirty || saving) && "cursor-not-allowed opacity-50",
+          )}
+        >
+          {dirty || saving ? (
+            <Save className="h-4 w-4" />
+          ) : (
+            <Check className="h-4 w-4" />
+          )}
+          <span className="hidden sm:inline">
+            {saving ? "Saving…" : dirty ? "Save" : "Saved"}
+          </span>
         </button>
         <button
           onClick={onExport}
@@ -55,6 +81,7 @@ export function TopBar({
           <Send className="h-4 w-4" />
           <span className="hidden sm:inline">Send for signature</span>
         </button>
+        <AuthMenu />
       </div>
     </header>
   );

@@ -2,12 +2,13 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { pdfTooLarge } from "@/lib/upload-limits";
 import type { Field } from "@/types/pdf-editor";
 
 // Creates a signature request ready to be sent (i.e. "Generate link" from
-// the editor's RecipientAssignBar). If a session cookie is present, the row
-// is stamped with `owner_email` so the sender can see it on `/documents`
-// across devices; anonymous sends leave `owner_email` NULL.
+// the editor's RecipientAssignBar) — always creates a brand-new row, even
+// if the editor was resumed from a saved draft (see AGENTS.md). Unlike POST
+// /api/documents, at least one "recipient" field is required.
 export async function POST(req: NextRequest) {
   const session = await auth();
 
@@ -19,6 +20,8 @@ export async function POST(req: NextRequest) {
   if (!(file instanceof Blob)) {
     return NextResponse.json({ error: "Missing PDF file" }, { status: 400 });
   }
+  const sizeErr = pdfTooLarge(file);
+  if (sizeErr) return sizeErr;
   if (typeof fieldsRaw !== "string") {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
