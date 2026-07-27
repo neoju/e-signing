@@ -1,0 +1,81 @@
+"use client";
+
+import { useState } from "react";
+import { Check, Copy, Download } from "lucide-react";
+import clsx from "clsx";
+import type { OwnedRequestSummary } from "@/types/signature-request";
+
+// Dashboard list rendered when the visitor is signed in — rows come from
+// `owner_email` on the server, so this is cross-device (unlike the
+// localStorage-backed `RequestsListLocal`).
+export function RequestsListOwned({
+  initialRequests,
+}: {
+  initialRequests: OwnedRequestSummary[];
+}) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyLink = async (r: OwnedRequestSummary) => {
+    await navigator.clipboard.writeText(`${window.location.origin}/sign/${r.token}`);
+    setCopiedId(r.id);
+    setTimeout(() => setCopiedId((c) => (c === r.id ? null : c)), 1500);
+  };
+
+  if (initialRequests.length === 0) {
+    return (
+      <div className="card text-center text-sm text-muted">
+        You don&apos;t have any documents yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {initialRequests.map((r) => (
+        <div key={r.id} className="card flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{r.title}</p>
+            <p className="text-xs text-muted">
+              {new Date(r.createdAt).toLocaleString()}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className={clsx(
+                "rounded-full px-2.5 py-1 text-xs font-medium",
+                r.status === "completed"
+                  ? "bg-emerald-500/10 text-emerald-400"
+                  : "bg-accent/10 text-accent",
+              )}
+            >
+              {r.status === "completed" ? "Signed" : "Pending"}
+            </span>
+            {r.status === "completed" && r.signedUrl ? (
+              <a
+                href={r.signedUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-ghost !px-3"
+                aria-label="Download signed PDF"
+              >
+                <Download className="h-4 w-4" />
+              </a>
+            ) : (
+              <button
+                onClick={() => copyLink(r)}
+                className="btn-ghost !px-3"
+                aria-label="Copy signing link"
+              >
+                {copiedId === r.id ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

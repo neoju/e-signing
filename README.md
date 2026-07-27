@@ -21,12 +21,22 @@ Add a `.env.local` with:
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service role key>
+
+# Auth.js (optional login via Google)
+AUTH_SECRET=<run `npx auth secret` to generate>
+AUTH_GOOGLE_ID=<google oauth client id>
+AUTH_GOOGLE_SECRET=<google oauth client secret>
+# AUTH_URL=https://your-domain.tld  # only needed on non-Vercel prod
 ```
 
 There is no `NEXT_PUBLIC_SUPABASE_ANON_KEY` because the browser never talks
 to Supabase directly — every read/write goes through a Next.js route handler
 using the service-role key. Keep `SUPABASE_SERVICE_ROLE_KEY` out of any
 client-exposed code.
+
+Login is optional. The editor and public sign-by-token flow work without an
+account; signing in only unlocks a server-backed "Sent requests" dashboard
+tied to your provider email.
 
 ## Commands
 

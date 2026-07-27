@@ -2,11 +2,13 @@
 
 SignZ — a Next.js 15 (App Router) app that lets a user upload a PDF, place
 signature/text/date fields on it, and either export a signed PDF locally or
-send a link so someone else can fill it in and sign. There are **no user
-accounts/auth anywhere** — the "send for signature" flow is backed by
-Supabase (Postgres + Storage), but all rendering, field placement, and PDF
-composition still happen entirely client-side in the browser; only the
-upload/share/complete steps touch the server.
+send a link so someone else can fill it in and sign. The "send for signature"
+flow is backed by Supabase (Postgres + Storage), but all rendering, field
+placement, and PDF composition still happen entirely client-side in the
+browser; only the upload/share/complete steps touch the server. **Login is
+optional** (Auth.js v5, Google) — the editor and the public sign flow work
+anonymously; signing in only unlocks a server-backed dashboard of your sent
+requests.
 
 ## Commands
 
@@ -47,18 +49,23 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   `package.json`; bumping `pdfjs-dist` requires re-running the postinstall
   copy step.
 
-## Signature request flow (Supabase, no auth)
+## Signature request flow (Supabase)
 
-- No accounts, no login, no cookies. The browser never talks to Supabase
-  directly; every DB/Storage operation goes through a Next.js route handler
-  using `src/lib/supabase/admin.ts` (service-role key). RLS on
-  `signature_requests` and the `documents` storage bucket is enabled with
-  **no permissive policies**, so only the service role can read/write —
-  losing that key is the only way to leak data.
+- The browser never talks to Supabase directly; every DB/Storage operation
+  goes through a Next.js route handler using `src/lib/supabase/admin.ts`
+  (service-role key). RLS on `signature_requests` and the `documents`
+  storage bucket is enabled with **no permissive policies**, so only the
+  service role can read/write — losing that key is the only way to leak
+  data.
 - Schema/RPCs live in `supabase/migrations/0001_init.sql` (apply manually via
   the Supabase SQL editor): `signature_requests` table (keyed by a random
-  `token`, no `owner_id`), `get_request_by_token(t)`, and
+  `token`), `get_request_by_token(t)`, and
   `complete_request(t, signed_path, fields)`.
+- `supabase/migrations/0002_add_owner_email.sql` adds a nullable
+  `owner_email` column + index. When a request is created by a logged-in
+  user, `POST /api/documents/send` stamps `session.user.email` onto the row;
+  anonymous POSTs leave it NULL. `GET /api/documents` is session-only and
+  returns just that user's rows.
 - `Field.assignee` (`"sender" | "recipient"`, `src/types/pdf-editor.ts`)
   distinguishes who fills a field in. The sender fills/signs `"sender"`
   fields directly in `PdfEditor` (existing tool-placement flow, unchanged).
@@ -69,13 +76,16 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   next signer).
 - Sender flow: clicking "Generate link" in `RecipientAssignBar` `POST`s the
   PDF + all fields (sender values preserved, recipient values blank) to
-  `src/app/api/requests/route.ts`, which uploads the original PDF to
+  `src/app/api/documents/send/route.ts`, which uploads the original PDF to
   Storage (`documents/{id}/original.pdf`) and inserts a row — it 400s if no
   `"recipient"` field is present. The returned `{ id, token }` is stashed in
-  the browser's `localStorage` (`src/lib/sent-requests.ts`) — there is no
-  server-side list of "my requests", so `/requests`
-  (`src/app/requests/page.tsx`) only shows what this browser remembers,
-  polling `GET /api/requests/[id]` for status.
+  the browser's `localStorage` (`src/lib/sent-requests.ts`) as a fallback,
+  and if a session cookie is present the row's `owner_email` is also set.
+  `/documents` (`src/app/documents/page.tsx`, titled "Your Documents" in the
+  UI) is a server component that branches on `auth()`: logged in →
+  server-fetch by `owner_email` (cross-device, `RequestsListOwned`); logged
+  out → localStorage fallback (per-browser) rendered by
+  `RequestsListLocal`, plus a "sign in to sync" banner.
 - Signer flow: `/sign/[token]` (`src/app/sign/[token]/page.tsx`) is a server
   component that looks up the row directly (service role bypasses RLS),
   404s if missing, shows an "already signed" screen if `status=completed`,
@@ -103,6 +113,30 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   a Google Fonts `@import` in `globals.css`. The signature "type" tab in
   `SignatureModal.tsx` depends on these exact font families being loaded —
   keep the two in sync if fonts change.
+
+## Auth (optional)
+
+- Auth.js v5 (`next-auth@beta`), configured in `src/auth.ts` with a Google
+  provider and **JWT sessions** (no DB adapter, no new tables). The
+  session cookie carries the provider `email`, which is the only identity
+  the rest of the app uses (`owner_email` on `signature_requests`).
+- `src/app/api/auth/[...nextauth]/route.ts` re-exports the handlers.
+  `src/middleware.ts` registers the `auth` middleware app-wide (so the
+  session cookie is refreshed) but gates nothing — login is optional
+  everywhere.
+- Env vars: `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` (see
+  `README.md`).
+- `src/app/login/page.tsx` is a server component with a `signIn(...)`
+  server action (Google). There is no separate register page — first OAuth
+  sign-in is registration. `src/components/AuthMenu.tsx` is a client
+  component always rendered as a dropdown (avatar+email when signed in, a
+  generic user icon when signed out) containing a "Your Documents" link
+  (`/documents`) plus "Sign in"/"Sign out"; it's mounted in the `Uploader`
+  header and on `/documents`. The `SessionProvider` from
+  `next-auth/react` is wired in `src/app/layout.tsx` via
+  `src/components/AuthSessionProvider.tsx`.
+- `src/types/next-auth.d.ts` narrows `session.user.email` to
+  non-nullable `string` for the rest of the codebase.
 
 ## Path alias
 

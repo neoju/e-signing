@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthSessionProvider } from "@/components/AuthSessionProvider";
 
 const title = "SignZ — Sign PDFs in seconds";
 const description =
-  "Upload, sign, and download PDFs in your browser. No sign-up. Nothing leaves your device.";
+  "Upload, sign, and download PDFs in your browser. PDF rendering and signing happen on your device; optional sign-in syncs your sent requests.";
 
 export const metadata: Metadata = {
   title,
@@ -24,7 +25,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AuthSessionProvider>{children}</AuthSessionProvider>
+      </body>
     </html>
   );
 }
