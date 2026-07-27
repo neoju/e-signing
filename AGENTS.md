@@ -256,6 +256,26 @@ No test suite, no CI config, and no `.git` repo exists yet in this project.
   sync. Server responses on 413 flow into the existing
   `sendError`/`saveError` states via each caller's `data?.error` fallback.
 
+## Daily upload cap
+
+- `supabase/migrations/0009_add_upload_rate_limit.sql` adds a
+  `document_upload_attempts(scope, key, created_at)` table. Only
+  `POST /api/documents/send` (the guest-accessible upload path) counts
+  against the cap — drafts (`POST /api/documents`) already require sign-in,
+  and signer uploads (`/api/sign/[token]/complete`) are gated by the
+  request's token.
+- Extras in `src/lib/upload-limits.ts`:
+  `GUEST_DAILY_UPLOAD_LIMIT = 3`, `USER_DAILY_UPLOAD_LIMIT = 10`,
+  `resolveUploadQuota(email, ip)` picks the right (scope, key, limit),
+  `checkUploadQuota` returns a 429 with `Retry-After` when the last 24h
+  count ≥ limit, and `recordUploadAttempt` inserts a row *after* the
+  DB insert commits (so failed uploads don't burn quota).
+- Guests behind a proxy that strips forwarded headers share the
+  `"unknown"` IP bucket — a misconfigured deployment fails **closed**
+  (still throttled) rather than granting anon unlimited uploads.
+- DB-read failures in `checkUploadQuota` fail **open** (log + allow),
+  mirroring the "best-effort" tone of the per-IP share-password limiter.
+
 ## Auth (optional)
 
 - Auth.js v5 (`next-auth@beta`), configured in `src/auth.ts` with a Google
