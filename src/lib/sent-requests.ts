@@ -1,6 +1,6 @@
 import type { SentRequestRecord } from "@/types/signature-request";
 
-const STORAGE_KEY = "signflow.sentRequests";
+const STORAGE_KEY = "signz.sentRequests";
 
 export function getSentRequests(): SentRequestRecord[] {
   if (typeof window === "undefined") return [];

@@ -1,4 +1,4 @@
--- SignFlow: signature requests + storage (no auth / no accounts)
+-- SignZ: signature requests + storage (no auth / no accounts)
 -- Apply this in the Supabase SQL editor (or via `supabase db push`).
 --
 -- There is no user identity in this app. All reads/writes happen server-side

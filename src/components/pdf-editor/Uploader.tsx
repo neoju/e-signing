@@ -16,7 +16,7 @@ export function Uploader({
           <div className="grid h-7 w-7 place-items-center rounded-md bg-accent text-white">
             <FileSignature className="h-3.5 w-3.5" />
           </div>
-          <span className="text-base font-semibold text-text">SignFlow</span>
+          <span className="text-base font-semibold text-text">SignZ</span>
         </div>
         <label
           onDrop={onDrop}

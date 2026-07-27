@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-const title = "SignFlow — Sign PDFs in seconds";
+const title = "SignZ — Sign PDFs in seconds";
 const description =
   "Upload, sign, and download PDFs in your browser. No sign-up. Nothing leaves your device.";
 
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     title,
     description,
     type: "website",
-    siteName: "SignFlow",
+    siteName: "SignZ",
   },
   twitter: {
     card: "summary_large_image",
