@@ -4,7 +4,12 @@ import { auth } from "@/auth";
 import { recordAuditEvent } from "@/lib/audit-log";
 import { getClientIp } from "@/lib/request-ip";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { pdfTooLarge } from "@/lib/upload-limits";
+import {
+  checkUploadQuota,
+  pdfTooLarge,
+  recordUploadAttempt,
+  resolveUploadQuota,
+} from "@/lib/upload-limits";
 import type { Field } from "@/types/pdf-editor";
 
 // Creates a signature request ready to be sent (i.e. "Generate link" from
@@ -53,8 +58,17 @@ export async function POST(req: NextRequest) {
   const token = randomBytes(24).toString("base64url");
   const originalPath = `${id}/original.pdf`;
   const ownerEmail = session?.user?.email ?? null;
+  const clientIp = getClientIp(req);
 
   const supabase = createSupabaseAdminClient();
+
+  // Rolling 24h upload cap — guests by IP (low limit), signed-in by email
+  // (higher limit). Checked before any storage/DB writes so a throttled
+  // request can't leave orphaned rows/objects behind.
+  const quota = resolveUploadQuota(ownerEmail, clientIp);
+  const quotaResp = await checkUploadQuota(supabase, quota);
+  if (quotaResp) return quotaResp;
+
   const buffer = Buffer.from(await file.arrayBuffer());
 
   const { error: uploadError } = await supabase.storage
@@ -77,11 +91,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
+  // Only count against the quota once the row is durably in place — a
+  // failed insert already returned above, so we won't double-count on retry.
+  await recordUploadAttempt(supabase, quota);
+
   await recordAuditEvent(supabase, {
     requestId: id,
     eventType: "sent",
     actor: "sender",
-    ipAddress: getClientIp(req),
+    ipAddress: clientIp,
     userAgent: req.headers.get("user-agent"),
   });
 
