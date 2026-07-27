@@ -43,7 +43,7 @@ export default function OpengraphImage() {
             S
           </div>
           <span style={{ fontSize: 40, fontWeight: 700, letterSpacing: -1 }}>
-            SignFlow
+            SignZ
           </span>
         </div>
         <div style={{ fontSize: 56, fontWeight: 600, letterSpacing: -1.5 }}>

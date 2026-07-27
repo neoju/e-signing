@@ -1,4 +1,4 @@
-# SignFlow
+# SignZ
 
 Upload a PDF, place signature/text/date fields, and either download a signed
 copy immediately or send a link so someone else can fill it in and sign —

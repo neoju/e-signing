@@ -1,6 +1,6 @@
 # AGENTS.md
 
-SignFlow — a Next.js 15 (App Router) app that lets a user upload a PDF, place
+SignZ — a Next.js 15 (App Router) app that lets a user upload a PDF, place
 signature/text/date fields on it, and either export a signed PDF locally or
 send a link so someone else can fill it in and sign. There are **no user
 accounts/auth anywhere** — the "send for signature" flow is backed by
