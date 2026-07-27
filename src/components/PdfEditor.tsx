@@ -18,6 +18,7 @@ import { addSentRequest } from "@/lib/sent-requests";
 import { MAX_PDF_BYTES, MAX_PDF_MB } from "@/lib/upload-limits";
 import type { Field, FieldAssignee, FieldKind, RenderedPage } from "@/types/pdf-editor";
 import type { DraftDocument } from "@/types/signature-request";
+import type { SavedSignature } from "@/types/signature";
 
 type EditorMode = "edit" | "assign-recipient";
 
@@ -102,6 +103,24 @@ export function PdfEditor() {
     // Only ever run this for the draft id present on first render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const email = session?.user?.email;
+    if (!email) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/signatures");
+        if (!res.ok) return;
+        const data: { signatures: SavedSignature[] } = await res.json();
+        const def = data.signatures.find((s) => s.isDefault) ?? data.signatures[0];
+        // Don't clobber a signature the user has already picked/drawn in
+        // this session.
+        if (def) setSavedSig((prev) => prev ?? def.imageDataUrl);
+      } catch {
+        // Non-fatal — falls back to the usual draw/type/upload flow.
+      }
+    })();
+  }, [session?.user?.email]);
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
